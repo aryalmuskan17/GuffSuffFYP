@@ -1,34 +1,57 @@
-// server/models/User.js - WEEK 1: MINIMAL AUTH SCHEMA
+// server/models/User.js - WEEK 2: ADVANCED AUTH & PROFILE SCHEMA
 
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
   username: {
     type: String,
-    required: true, // Must be required for standard sign-up
+    required: true, // Username is always required
     unique: true,
     trim: true,
   },
-  email: { 
-    type: String,
-    required: true, // Must be required for standard sign-up
-    unique: true,
-    trim: true,
-  },
+
   password: {
     type: String,
-    required: true, // MUST be required for the standard login functionality in Week 1
   },
   
-  // Week 1 only needs role; other fields are added in later weeks
+  email: { 
+    type: String,
+    unique: true,
+    trim: true,
+    sparse: true, 
+  },
+  
+  // GOOGLE ID: Must be present for Google Auth
+  googleId: { 
+    type: String,
+    unique: true,
+    sparse: true, 
+  },
+  
   role: {
     type: String,
     enum: ['Reader', 'Publisher', 'Admin'],
     default: 'Reader',
   },
   
-  // All other fields (googleId, subscriptions, balance, profile info) are removed
-  // for this milestone to keep the commit clean.
+  // PROFILE MANAGEMENT FIELDS 
+  fullName: {
+    type: String,
+    default: '',
+  },
+  bio: {
+    type: String,
+    default: '',
+  },
+  picture: { // Path to the uploaded profile picture
+    type: String,
+    default: '',
+  },
+  contactInfo: {
+    type: String,
+    default: '',
+  },
+  
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', UserSchema);

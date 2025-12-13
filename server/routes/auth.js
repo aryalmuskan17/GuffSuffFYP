@@ -1,24 +1,259 @@
-// server/routes/auth.js - WEEK 1: REGISTER & LOGIN ONLY
+// server/routes/auth.js - WEEK 2: ADVANCED AUTH (Standard + Google) & PROFILE MANAGEMENT
 
 const express = require('express');
-const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-
-// Week 1: Only require the User model
 const User = require('../models/User'); 
+const mongoose = require('mongoose'); 
 
-// *** END OF MODULE IMPORTS ***
+// Modules required for Profile Picture Uploads
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-// @route   POST /api/auth/register
-// @desc    Register user (Only standard username/password/email)
-// @access  Public
+// Modules required for Google OAuth
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const session = require('express-session');
+
+const router = express.Router();
+// SESSION AND PASSPORT SETUP FOR GOOGLE AUTHENTICATION
+
+router.use(session({
+  secret: process.env.SESSION_SECRET || 'a_very_secret_key', 
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false } 
+}));
+
+router.use(passport.initialize());
+router.use(passport.session());
+
+// Passport Google Strategy configuration
+passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: "http://localhost:5001/api/auth/google/callback"
+  },
+  async (accessToken, refreshToken, profile, done) => {
+    try {
+      let user = await User.findOne({ googleId: profile.id });
+      
+      if (!user) {
+        user = {
+          googleId: profile.id,
+          username: profile.displayName,
+          email: profile.emails[0].value,
+          isNewUser: true, // Flag for redirection
+        };
+        return done(null, user);
+      }
+      done(null, user);
+    } catch (err) {
+      done(err, null);
+    }
+  }
+));
+
+// Session serialization for Google Auth
+passport.serializeUser((user, done) => {
+  if (user.isNewUser) {
+    done(null, user);
+  } else {
+    done(null, user.id);
+  }
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    if (typeof id === 'object' && id.isNewUser) {
+      return done(null, id);
+    }
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (err) {
+    done(err, null);
+  }
+});
+
+//GOOGLE AUTHENTICATION ROUTES
+
+const CLIENT_URL_DEV = "http://localhost:5173"; 
+
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+router.get(
+  '/google/callback',
+  passport.authenticate('google', { failureRedirect: `${CLIENT_URL_DEV}/login` }),
+  (req, res) => {
+    const user = req.user;
+    
+    if (user.isNewUser) {
+      // NEW USER: Redirect to registration page with details
+      const redirectUrl = `${CLIENT_URL_DEV}/register?googleId=${user.googleId}&username=${encodeURIComponent(user.username)}&email=${encodeURIComponent(user.email)}`;
+      return res.redirect(redirectUrl);
+    }
+    
+    // EXISTING USER: Create token and redirect
+    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    res.redirect(`${CLIENT_URL_DEV}/login-success?token=${token}`);
+  }
+);
+
+// Required for all secure profile routes
+
+const protect = (req, res, next) => {
+  let token = req.header('x-auth-token');
+
+  if (!token && req.header('Authorization')) {
+    const authHeader = req.header('Authorization');
+    if (authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+  }
+
+  if (!token) {
+    return res.status(401).json({ message: 'Not authorized, no token' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    console.error(error);
+    res.status(401).json({ message: 'Not authorized, token failed' });
+  }
+};
+
+// MULTER SETUP FOR PROFILE PICTURES 
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadPath = 'uploads/profilePictures';
+    // Ensure the uploads directory exists
+    fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+});
+
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+//PROFILE MANAGEMENT ROUTES
+
+router.get('/profile', protect, async (req, res) => {
+  try {
+    // Only select necessary fields for Week 2 (no subscriptions yet)
+    const user = await User.findById(req.user.id).select('-password'); 
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.patch('/profile', protect, upload.single('profilePicture'), async (req, res) => {
+  const { fullName, bio, contactInfo } = req.body;
+  let updateData = { fullName, bio, contactInfo };
+
+  try {
+    if (req.file) {
+      updateData.picture = req.file.path;
+    }
+    
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password');
+    
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.patch('/profile/username', protect, async (req, res) => {
+  const { username } = req.body;
+  if (!username) {
+    return res.status(400).json({ error: 'Username is required.' });
+  }
+
+  try {
+    const existingUser = await User.findOne({ username });
+    if (existingUser && existingUser._id.toString() !== req.user.id) {
+      return res.status(409).json({ error: 'This username is already taken.' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { username },
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    console.error('Error updating username:', error);
+    res.status(500).json({ error: 'Server error updating username.' });
+  }
+});
+
+router.patch('/profile/password', protect, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    // Check if the current password is correct
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Incorrect current password.' });
+    }
+
+    // Hash the new password and save it
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({ message: 'Password updated successfully.' });
+
+  } catch (error) {
+    console.error('Error updating password:', error);
+    res.status(500).json({ error: 'Server error updating password.' });
+  }
+});
+
+
+//CORE AUTH ROUTES ( FOR GOOGLE ID)
+
 router.post('/register', async (req, res) => {
-  // Only deconstruct fields needed for standard registration
-  const { username, email, password, role } = req.body; 
+  // Deconstruct fields, including googleId for linking
+  const { username, email, password, role, googleId } = req.body; 
 
-  if (!username || !password || !email) {
-    return res.status(400).json({ message: 'Username, email, and password are required.' });
+  // Check for minimum required fields for standard login (if no googleId)
+  if (!username || !email || (!password && !googleId)) {
+    return res.status(400).json({ message: 'Username, email, and password/Google ID are required.' });
   }
 
   try {
@@ -32,19 +267,19 @@ router.post('/register', async (req, res) => {
         return res.status(409).json({ message: 'Username already exists. Please choose a different one.' });
       }
       if (existingUser.email === email) {
-        // Redirect logic handled on client side, just send message here
         return res.status(409).json({ message: 'Email already exists. Please use the login page to sign in.' });
       }
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Hash password only if provided
+    const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
 
     const newUser = new User({
       username,
       email,
       password: hashedPassword,
-      role: role || 'Reader', // Default role if not specified
-      // googleId is removed for Week 1
+      role: role || 'Reader',
+      googleId // Links the Google ID from the redirect, if present
     });
     
     await newUser.save();
@@ -65,9 +300,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// @route   POST /api/auth/login
-// @desc    Authenticate user & get token
-// @access  Public
+
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -77,6 +310,11 @@ router.post('/login', async (req, res) => {
   try {
     const user = await User.findOne({ username });
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+
+    // Handle case where user logged in via Google and has no password
+    if (!user.password) {
+        return res.status(401).json({ message: 'Account registered via Google. Please log in using the Google button.' });
+    }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ message: 'Invalid credentials' });
@@ -88,8 +326,5 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ message: 'Server error during login. Please try again later.' });
   }
 });
-
-
-// *** ALL OTHER ROUTES (PROFILE, GOOGLE AUTH, ADMIN, SUBSCRIPTIONS, PAYMENTS) ARE REMOVED FOR WEEK 1 ***
 
 module.exports = router;

@@ -1,33 +1,63 @@
-// client/src/App.jsx - WEEK 1: MINIMAL ROUTER SETUP
+// client/src/App.jsx - FINAL VERSION WITH TOAST
 
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useContext } from 'react';
 import Login from './Login.jsx'; 
-// NOTE: We are using Login.jsx for BOTH /login and /register
+import { UserContext } from './context/UserContext';
+import ProtectedRoute from './components/ProtectedRoute'; 
+import Welcome from './pages/Welcome.jsx'; 
+
+// --- NEW IMPORTS for Toast Notifications ---
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+// ------------------------------------------
 
 function App() {
-  // In Week 1, we don't have global state yet, so we hardcode authentication to false.
-  const isAuthenticated = false; 
+  const { isAuthenticated } = useContext(UserContext);
 
   return (
-    // Router must wrap the routes if not wrapped in main.jsx
     <Router>
       <Routes>
-        {/* PUBLIC ROUTES: Login and Register */}
-        <Route path="/login" element={<Login isRegister={false} />} />
-        <Route path="/register" element={<Login isRegister={true} />} />
-        
-        {/* PLACEHOLDER ROUTE: Redirects if not logged in */}
+        {/* Public Routes */}
         <Route 
-          path="/dashboard" 
-          element={isAuthenticated ? <h1>Dashboard (Placeholder)</h1> : <Navigate to="/login" />} 
+          path="/login" 
+          element={isAuthenticated ? <Navigate to="/welcome" replace /> : <Login isRegister={false} />} 
+        />
+        <Route 
+          path="/register" 
+          element={isAuthenticated ? <Navigate to="/welcome" replace /> : <Login isRegister={true} />} 
         />
         
-        {/* Redirects the root path to the login page */}
-        <Route path="/" element={<Navigate to="/login" />} />
+        {/* Protected Route */}
+        <Route 
+          path="/welcome" 
+          element={
+            <ProtectedRoute>
+              <Welcome /> 
+            </ProtectedRoute>
+          } 
+        />
         
-        {/* Catch-all for undefined paths */}
+        {/* Root Redirect */}
+        <Route path="/" element={<Navigate to={isAuthenticated ? "/welcome" : "/login"} replace />} />
+        
+        {/* Catch-all */}
         <Route path="*" element={<h1>404: Page Not Found</h1>} />
       </Routes>
+      
+      {/* --- ADD THIS TO RENDER THE TOAST NOTIFICATIONS --- */}
+      <ToastContainer 
+          position="bottom-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop={false}
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="colored" // Use the "colored" theme for a nice look
+      />
     </Router>
   );
 }

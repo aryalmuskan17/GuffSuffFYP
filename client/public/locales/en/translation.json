@@ -1,0 +1,15 @@
+{
+  "loginToGuffSuff": "Login to GuffSuff",
+  "username": "Username",
+  "password": "Password",
+  "login": "Login",
+  "or": "or",
+  "loginWithGoogle": "Continue with Google",
+  "noAccount": "No account?",
+  "registerHere": "Register here",
+  "alreadyRegistered": "Already registered?",
+  "logout": "Logout",
+  "profile": "Profile",
+  "toggleTheme": "Toggle Dark/Light Mode",
+  "logoutSuccess": "You have been logged out successfully."
+}

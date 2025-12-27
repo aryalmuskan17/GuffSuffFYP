@@ -1,13 +1,11 @@
-// client/src/pages/Welcome.jsx
-
 import React, { useContext } from 'react';
-import { UserContext } from '../context/UserContext'; // Get access to global user state
+import { UserContext } from '../context/UserContext';
 
 const Welcome = () => {
   const { user, logout } = useContext(UserContext);
 
   if (!user) {
-    return <h1>Loading...</h1>; // Should be caught by ProtectedRoute, but good practice
+    return <h1>Loading...</h1>;
   }
 
   return (
@@ -15,10 +13,6 @@ const Welcome = () => {
       <h1>🎉 Welcome, {user.username}!</h1>
       <p style={{ fontSize: '1.2em', color: '#555' }}>
         Your current role is: <strong>{user.role}</strong>
-      </p>
-      
-      <p style={{ marginTop: '30px', borderTop: '1px solid #eee', paddingTop: '15px' }}>
-        This page confirms successful login and retrieval of your user data from the protected API route `/api/auth/profile`.
       </p>
 
       <button 

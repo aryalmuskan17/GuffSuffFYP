@@ -1,11 +1,9 @@
-// server/models/User.js - WEEK 2: ADVANCED AUTH & PROFILE SCHEMA
-
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
   username: {
     type: String,
-    required: true, // Username is always required
+    required: true,
     unique: true,
     trim: true,
   },
@@ -21,7 +19,6 @@ const UserSchema = new mongoose.Schema({
     sparse: true, 
   },
   
-  // GOOGLE ID: Must be present for Google Auth
   googleId: { 
     type: String,
     unique: true,
@@ -33,8 +30,7 @@ const UserSchema = new mongoose.Schema({
     enum: ['Reader', 'Publisher', 'Admin'],
     default: 'Reader',
   },
-  
-  // PROFILE MANAGEMENT FIELDS 
+
   fullName: {
     type: String,
     default: '',
@@ -43,7 +39,7 @@ const UserSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
-  picture: { // Path to the uploaded profile picture
+  picture: { 
     type: String,
     default: '',
   },

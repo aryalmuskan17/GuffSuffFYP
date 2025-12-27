@@ -1,23 +1,18 @@
-// server/routes/auth.js - WEEK 2: ADVANCED AUTH (Standard + Google) & PROFILE MANAGEMENT
-
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User'); 
 const mongoose = require('mongoose'); 
 
-// Modules required for Profile Picture Uploads
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Modules required for Google OAuth
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const session = require('express-session');
 
 const router = express.Router();
-// SESSION AND PASSPORT SETUP FOR GOOGLE AUTHENTICATION
 
 router.use(session({
   secret: process.env.SESSION_SECRET || 'a_very_secret_key', 
@@ -29,7 +24,6 @@ router.use(session({
 router.use(passport.initialize());
 router.use(passport.session());
 
-// Passport Google Strategy configuration
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -44,7 +38,7 @@ passport.use(new GoogleStrategy({
           googleId: profile.id,
           username: profile.displayName,
           email: profile.emails[0].value,
-          isNewUser: true, // Flag for redirection
+          isNewUser: true,
         };
         return done(null, user);
       }
@@ -55,7 +49,6 @@ passport.use(new GoogleStrategy({
   }
 ));
 
-// Session serialization for Google Auth
 passport.serializeUser((user, done) => {
   if (user.isNewUser) {
     done(null, user);
@@ -76,8 +69,6 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-//GOOGLE AUTHENTICATION ROUTES
-
 const CLIENT_URL_DEV = "http://localhost:5173"; 
 
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
@@ -89,18 +80,14 @@ router.get(
     const user = req.user;
     
     if (user.isNewUser) {
-      // NEW USER: Redirect to registration page with details
       const redirectUrl = `${CLIENT_URL_DEV}/register?googleId=${user.googleId}&username=${encodeURIComponent(user.username)}&email=${encodeURIComponent(user.email)}`;
       return res.redirect(redirectUrl);
     }
-    
-    // EXISTING USER: Create token and redirect
+
     const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.redirect(`${CLIENT_URL_DEV}/login-success?token=${token}`);
   }
 );
-
-// Required for all secure profile routes
 
 const protect = (req, res, next) => {
   let token = req.header('x-auth-token');
@@ -126,12 +113,10 @@ const protect = (req, res, next) => {
   }
 };
 
-// MULTER SETUP FOR PROFILE PICTURES 
-
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = 'uploads/profilePictures';
-    // Ensure the uploads directory exists
+
     fs.mkdirSync(uploadPath, { recursive: true });
     cb(null, uploadPath);
   },
@@ -144,8 +129,6 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }
 });
-
-//PROFILE MANAGEMENT ROUTES
 
 router.get('/profile', protect, async (req, res) => {
   try {
@@ -225,13 +208,11 @@ router.patch('/profile/password', protect, async (req, res) => {
       return res.status(404).json({ error: 'User not found.' });
     }
 
-    // Check if the current password is correct
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: 'Incorrect current password.' });
     }
 
-    // Hash the new password and save it
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
     await user.save();
@@ -245,19 +226,15 @@ router.patch('/profile/password', protect, async (req, res) => {
 });
 
 
-//CORE AUTH ROUTES ( FOR GOOGLE ID)
-
 router.post('/register', async (req, res) => {
-  // Deconstruct fields, including googleId for linking
   const { username, email, password, role, googleId } = req.body; 
 
-  // Check for minimum required fields for standard login (if no googleId)
   if (!username || !email || (!password && !googleId)) {
     return res.status(400).json({ message: 'Username, email, and password/Google ID are required.' });
   }
 
   try {
-    // Check if a user with that username or email already exists
+
     const existingUser = await User.findOne({ 
       $or: [{ username }, { email }]
     });
@@ -271,7 +248,6 @@ router.post('/register', async (req, res) => {
       }
     }
 
-    // Hash password only if provided
     const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
 
     const newUser = new User({
@@ -279,7 +255,7 @@ router.post('/register', async (req, res) => {
       email,
       password: hashedPassword,
       role: role || 'Reader',
-      googleId // Links the Google ID from the redirect, if present
+      googleId 
     });
     
     await newUser.save();
@@ -311,7 +287,6 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ username });
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
-    // Handle case where user logged in via Google and has no password
     if (!user.password) {
         return res.status(401).json({ message: 'Account registered via Google. Please log in using the Google button.' });
     }
